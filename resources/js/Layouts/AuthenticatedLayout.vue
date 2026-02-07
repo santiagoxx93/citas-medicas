@@ -56,6 +56,11 @@ const logout = () => {
                                         Mis Horarios
                                     </NavLink>
 
+                                    <!-- NUEVO LINK: AGENDAR CITA COMO ADMIN (RF03) -->
+                                    <NavLink :href="route('appointments.create')" :active="route().current('appointments.create')">
+                                        Reservar Cita
+                                    </NavLink>
+
                                     <NavLink 
                                         v-if="$page.props.auth.user.role === 'admin'"
                                         :href="route('admin.doctors.create')" 
@@ -133,6 +138,11 @@ const logout = () => {
 
                             <ResponsiveNavLink :href="route('admin.schedules.edit')" :active="route().current('admin.schedules.edit')">
                                 Mis Horarios
+                            </ResponsiveNavLink>
+
+                            <!-- NUEVO LINK RESPONSIVE (RF03) -->
+                            <ResponsiveNavLink :href="route('appointments.create')" :active="route().current('appointments.create')">
+                                Reservar Cita
                             </ResponsiveNavLink>
 
                             <ResponsiveNavLink 

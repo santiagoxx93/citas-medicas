@@ -16,7 +16,9 @@ class Appointment extends Model
         'date',
         'time',
         'status',
-        'observation'
+        'observation',
+        'diagnosis',
+        'prescription'
     ];
 
     // Una cita pertenece a un Paciente

@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\Schedule;
+use App\Models\User; // <--- Importante para buscar doctores
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Illuminate\Support\Facades\Auth;
@@ -10,18 +11,53 @@ use Illuminate\Support\Facades\Auth;
 class ScheduleController extends Controller
 {
     /**
-     * Muestra la vista de edición de horarios (RF-02).
+     * Muestra la vista de edición de horarios.
+     * Permite al Admin seleccionar un médico.
      */
-    public function edit()
+    public function edit(Request $request)
     {
-        // Buscamos los horarios del usuario logueado (Médico/Admin)
-        $schedules = Schedule::where('doctor_id', Auth::id())->get();
+        $user = Auth::user();
+        $doctors = [];
+        $schedules = [];
+        $targetDoctorId = null;
 
-        // Si es un médico nuevo y no tiene horarios, podríamos crearlos aquí
-        // o mostrar una vista vacía. Asumiremos que el Seeder ya creó los 5 o 7 días base.
+        // 1. LÓGICA SEGÚN ROL
+        if ($user->role === 'admin') {
+            // Si es Admin, obtenemos la lista de doctores para el dropdown
+            $doctors = User::where('role', 'doctor')->get();
+            
+            // Verificamos si el admin seleccionó un doctor (viene por URL)
+            $targetDoctorId = $request->input('doctor_id');
+        } else {
+            // Si es Doctor, solo puede ver sus propios horarios
+            $targetDoctorId = $user->id;
+        }
+
+        // 2. CARGA O GENERACIÓN DE HORARIOS (Solo si hay un doctor definido)
+        if ($targetDoctorId) {
+            $schedules = Schedule::where('doctor_id', $targetDoctorId)->get();
+
+            // Auto-generación (Lazy Loading) para el doctor seleccionado
+            if ($schedules->isEmpty()) {
+                $days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
+                foreach ($days as $day) {
+                    Schedule::create([
+                        'doctor_id' => $targetDoctorId,
+                        'day_of_week' => $day,
+                        'is_active' => true,
+                        'start_time' => '08:00:00',
+                        'end_time' => '16:00:00',
+                    ]);
+                }
+                $schedules = Schedule::where('doctor_id', $targetDoctorId)->get();
+            }
+        }
 
         return Inertia::render('Admin/Schedules', [
-            'schedules' => $schedules
+            'schedules' => $schedules,
+            'doctors' => $doctors, // Lista vacía si no es admin
+            'selectedDoctorId' => $targetDoctorId,
+            'isAdmin' => $user->role === 'admin'
         ]);
     }
 
@@ -30,7 +66,6 @@ class ScheduleController extends Controller
      */
     public function update(Request $request)
     {
-        // Validamos que venga un array de horarios
         $request->validate([
             'schedules' => 'required|array',
             'schedules.*.id' => 'required|exists:schedules,id',
@@ -39,16 +74,15 @@ class ScheduleController extends Controller
             'schedules.*.is_active' => 'boolean',
         ]);
 
-        // Recorremos cada día modificado y actualizamos la base de datos
         foreach ($request->schedules as $scheduleData) {
             $schedule = Schedule::find($scheduleData['id']);
             
-            // Seguridad: Asegurar que el horario pertenece al médico que lo edita
-            if ($schedule->doctor_id === Auth::id()) {
+            // PERMISO: El dueño PUEDE editar, el Admin TAMBIÉN PUEDE editar
+            if ($schedule->doctor_id === Auth::id() || Auth::user()->role === 'admin') {
                 $schedule->update([
                     'start_time' => $scheduleData['start_time'],
                     'end_time' => $scheduleData['end_time'],
-                    'is_active' => $scheduleData['is_active'],
+                    'is_active' => (bool) $scheduleData['is_active'],
                 ]);
             }
         }

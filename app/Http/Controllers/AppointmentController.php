@@ -2,75 +2,93 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\Schedule;
+use App\Models\Appointment;
+use App\Models\User;      // <--- ESTA LÍNEA FALTABA
+use App\Models\Schedule;  // <--- ESTA TAMBIÉN ES IMPORTANTE
 use Illuminate\Http\Request;
 use Inertia\Inertia;
-use Inertia\Response;
-use Illuminate\Support\Facades\Redirect;
 
 class AppointmentController extends Controller
 {
     /**
-     * Muestra el formulario para agendar una nueva cita.
-     * (Aquí el paciente ve los horarios disponibles)
+     * Muestra el formulario para crear una nueva cita.
      */
-    public function create(): Response
+    public function create()
     {
-        // 1. Obtenemos los horarios activos de la base de datos
-        // Eager loading 'doctor' para mostrar el nombre del médico
-        $schedules = Schedule::with('doctor')
-            ->where('is_active', true)
-            ->get();
+        // 1. Obtenemos todos los doctores
+        $doctors = User::where('role', 'doctor')->get();
 
-        // 2. Renderizamos la vista 'Appointments/Create' (que crearemos en breve)
-        // y le pasamos los datos de los horarios
+        // 2. Obtenemos todos los horarios activos para filtrar en el frontend
+        $schedules = Schedule::where('is_active', true)->get();
+
+        // 3. (RF03) Si es Admin, obtenemos los pacientes para que pueda seleccionar por quién agenda
+        $patients = [];
+        if (auth()->user()->role === 'admin') {
+            $patients = User::where('role', 'patient')->get();
+        }
+
         return Inertia::render('Appointments/Create', [
-            'schedules' => $schedules
+            'doctors' => $doctors,
+            'schedules' => $schedules,
+            'patients' => $patients // Pasamos la lista (vacía si no es admin)
         ]);
     }
-    
+
+    /**
+     * Guarda la cita en la base de datos.
+     */
     public function store(Request $request)
-{
-    // 1. Validar los datos que vienen del formulario
-    $validated = $request->validate([
-        'date' => 'required|date|after_or_equal:today', // No permitir fechas pasadas
-        'time' => 'required',
-        // 'doctor_id' lo sacaremos de la lógica o del formulario. 
-        // Por simplificación inicial, asignaremos el primer médico disponible o el seleccionado.
-        // Si tu formulario aún no envía doctor_id, lo podemos forzar temporalmente para probar.
-        'observation' => 'nullable|string|max:255',
-    ]);
+    {
+        $request->validate([
+            'doctor_id' => 'required|exists:users,id',
+            'date' => 'required|date|after_or_equal:today',
+            'time' => 'required',
+            'reason' => 'required|string|max:255',
+            'patient_id' => 'nullable|exists:users,id', // Opcional (solo admin lo envía)
+        ]);
 
-    // 2. Crear la cita en la Base de Datos
-    $request->user()->appointmentsAsPatient()->create([
-        'doctor_id' => 2, // OJO: Aquí ponemos '2' fijo porque es el ID del médico que creamos en el Seeder. Luego lo haremos dinámico.
-        'date' => $request->date,
-        'time' => $request->time,
-        'observation' => $request->observation,
-        'status' => 'pending' // Estado inicial según RF-05
-    ]);
+        // Determinamos el ID del paciente real
+        $patientId = auth()->id(); // Por defecto, es el usuario logueado
+        if (auth()->user()->role === 'admin' && $request->has('patient_id') && $request->patient_id) {
+            $patientId = $request->patient_id; // Si es admin y eligió a alguien, usamos ese ID
+        }
 
-    // 3. Redirigir al usuario con un mensaje de éxito
-    return Redirect::route('dashboard')->with('success', '¡Cita agendada correctamente!');
-}
+        Appointment::create([
+            'user_id' => $patientId,    // Usamos la variable calculada
+            // 'patient_id' => ... ,    // (Eliminé este campo duplicado si ya usas user_id como FK principal)
+            'doctor_id' => $request->doctor_id,
+            'date' => $request->date,
+            'time' => $request->time,
+            'observation' => $request->reason,
+            'status' => 'pending',
+        ]);
 
-/**
-     * Permite al paciente cancelar su propia cita (RF-04).
+        // Redirección inteligente: Si es admin, vuelve al panel admin. Si es paciente, al dashboard.
+        $redirectRoute = auth()->user()->role === 'admin' ? 'admin.appointments.index' : 'dashboard';
+
+        return redirect()->route($redirectRoute)->with('success', 'Cita agendada correctamente.');
+    }
+
+    /**
+     * Cancela una cita.
      */
     public function cancel($id)
     {
-        // Buscamos la cita, pero aseguramos que pertenezca al usuario conectado
-        // Esto evita que un paciente cancele la cita de otro por error.
-        $appointment = auth()->user()->appointmentsAsPatient()->findOrFail($id);
+        $appointment = Appointment::findOrFail($id);
 
-        // Validamos que no esté ya cancelada o completada
-        if ($appointment->status === 'cancelled' || $appointment->status === 'completed') {
-            return redirect()->back()->with('error', 'Esta cita ya no se puede cancelar.');
+        // Seguridad: Solo el dueño de la cita puede cancelarla
+        if ($appointment->user_id !== auth()->id()) {
+            abort(403);
         }
 
-        // Actualizamos el estado
+        // REGLA DE NEGOCIO (RF04): No cancelar con menos de 24h de antelación
+        $appointmentDate = \Carbon\Carbon::parse($appointment->date . ' ' . $appointment->time);
+        if ($appointmentDate->lt(now()->addHours(24))) {
+            return redirect()->back()->with('error', 'No puedes cancelar con menos de 24 horas de antelación. Por favor contacta al consultorio.');
+        }
+
         $appointment->update(['status' => 'cancelled']);
 
-        return redirect()->back()->with('success', 'Has cancelado la cita exitosamente.');
+        return redirect()->back()->with('success', 'Cita cancelada.');
     }
 }
