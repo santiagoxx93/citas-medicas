@@ -43,8 +43,7 @@ class AppointmentController extends Controller
             'doctor_id' => 'required|exists:users,id',
             'date' => 'required|date|after_or_equal:today',
             'time' => 'required',
-            'reason' => 'required|string|max:255',
-            'patient_id' => 'nullable|exists:users,id', // Opcional (solo admin lo envía)
+            // 'reason' => 'required|string|max:255', // En el form se llama 'reason', en DB 'observation' ?
         ]);
 
         // Determinamos el ID del paciente real
@@ -55,11 +54,10 @@ class AppointmentController extends Controller
 
         Appointment::create([
             'user_id' => $patientId,    // Usamos la variable calculada
-            // 'patient_id' => ... ,    // (Eliminé este campo duplicado si ya usas user_id como FK principal)
             'doctor_id' => $request->doctor_id,
             'date' => $request->date,
             'time' => $request->time,
-            'observation' => $request->reason,
+            'observation' => $request->reason ?? $request->observation ?? 'Sin motivo', // Simplificado
             'status' => 'pending',
         ]);
 

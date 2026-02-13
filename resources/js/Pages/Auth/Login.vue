@@ -121,7 +121,7 @@ const submit = () => {
                             </div>
 
                             <!-- Recordarme -->
-                            <div class="flex items-center justify-between">
+                            <div class="flex items-center justify-between w-full">
                                 <label class="flex items-center group cursor-pointer">
                                     <Checkbox name="remember" v-model:checked="form.remember" class="rounded border-gray-300 text-blue-600 shadow-sm focus:ring-blue-500" />
                                     <span class="ms-2 text-sm font-medium text-gray-600 group-hover:text-gray-900 transition">Recordarme</span>
@@ -130,7 +130,7 @@ const submit = () => {
                                 <Link
                                     v-if="canResetPassword"
                                     :href="route('password.request')"
-                                    class="text-sm font-bold text-transparent bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text hover:underline"
+                                    class="text-sm font-bold text-transparent bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text hover:underline text-right ml-4"
                                 >
                                     ¿Olvidaste tu contraseña?
                                 </Link>
